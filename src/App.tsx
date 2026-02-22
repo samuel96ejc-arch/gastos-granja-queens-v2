@@ -18,7 +18,10 @@ import {
   Loader2,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Lock,
+  LogOut,
+  Pencil
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -39,7 +42,8 @@ import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
   onAuthStateChanged, 
-  signInAnonymously
+  signInWithEmailAndPassword,
+  signOut
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -50,12 +54,13 @@ import {
   doc, 
   query, 
   writeBatch,
-  getDocs
+  getDocs,
+  updateDoc
 } from 'firebase/firestore';
 
-// --- CONFIGURACIÓN FIREBASE ---
+// --- CONFIGURACIÓN FIREBASE (AHORA SEGURA) ---
 const firebaseConfig = {
-  apiKey: "AIzaSyDiWfZPVVDQqH4WB0ec1lfOU4w3BZ6Xrl0",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "huevos-queens.firebaseapp.com",
   projectId: "huevos-queens",
   storageBucket: "huevos-queens.firebasestorage.app",
@@ -77,7 +82,6 @@ const appId = 'huevos-queens-gastos';
 
 // --- DATOS MAESTROS (SEMANAS 1 A 23) ---
 const INITIAL_EXPENSES_DATA = [
-  // SEMANA 1
   { week: 1, date: '2025-09-05', description: 'Gallinas', amount: 10000, category: 'Aves' },
   { week: 1, date: '2025-09-05', description: 'Cable - Bombillos', amount: 800, category: 'Infraestructura' },
   { week: 1, date: '2025-09-05', description: 'Tubo - Bebederos', amount: 470, category: 'Insumos' },
@@ -89,9 +93,7 @@ const INITIAL_EXPENSES_DATA = [
   { week: 1, date: '2025-09-05', description: 'Planta Eléctrica', amount: 1200, category: 'Infraestructura' },
   { week: 1, date: '2025-09-05', description: 'Cámaras WIFI', amount: 300, category: 'Infraestructura' },
   { week: 1, date: '2025-09-05', description: 'Nómina', amount: 700, category: 'Nómina' },
-  // SEMANA 2
   { week: 2, date: '2025-09-12', description: 'Nómina', amount: 500, category: 'Nómina' },
-  // SEMANA 3
   { week: 3, date: '2025-09-19', description: '10 Bultos Purina', amount: 1000, category: 'Insumos' },
   { week: 3, date: '2025-09-19', description: 'Plástico Costal', amount: 705, category: 'Infraestructura' },
   { week: 3, date: '2025-09-19', description: 'Plástico', amount: 171, category: 'Infraestructura' },
@@ -99,70 +101,54 @@ const INITIAL_EXPENSES_DATA = [
   { week: 3, date: '2025-09-19', description: 'Utensilios', amount: 600, category: 'Otros' },
   { week: 3, date: '2025-09-19', description: 'Vitamina', amount: 100, category: 'Sanidad' },
   { week: 3, date: '2025-09-19', description: 'Nómina', amount: 500, category: 'Nómina' },
-  // SEMANA 4
   { week: 4, date: '2025-09-26', description: '13 Bultos Purina', amount: 1189, category: 'Insumos' },
   { week: 4, date: '2025-09-26', description: '3 Bultos Purina', amount: 300, category: 'Insumos' },
   { week: 4, date: '2025-09-26', description: 'Nómina', amount: 600, category: 'Nómina' },
   { week: 4, date: '2025-09-26', description: 'Cámaras (Abono)', amount: 300, category: 'Infraestructura' },
-  // SEMANA 5
   { week: 5, date: '2025-10-03', description: '20 Bultos Purina', amount: 1700, category: 'Insumos' },
   { week: 5, date: '2025-10-03', description: 'Máquina - Vitamina', amount: 920, category: 'Otros' },
   { week: 5, date: '2025-10-03', description: 'Nómina', amount: 500, category: 'Nómina' },
-  // SEMANA 6
   { week: 6, date: '2025-10-10', description: '30 Bultos Purina', amount: 2450, category: 'Insumos' },
   { week: 6, date: '2025-10-10', description: 'Nómina - Ayudante', amount: 640, category: 'Nómina' },
-  // SEMANA 7
   { week: 7, date: '2025-10-17', description: 'Nómina', amount: 550, category: 'Nómina' },
   { week: 7, date: '2025-10-17', description: 'Veterinario', amount: 600, category: 'Sanidad' },
-  // SEMANA 8
   { week: 8, date: '2025-10-24', description: 'Tanque - Ladrillo', amount: 447, category: 'Infraestructura' },
   { week: 8, date: '2025-10-24', description: '2 Bultos Purina', amount: 172, category: 'Insumos' },
   { week: 8, date: '2025-10-24', description: '10 Bultos + 13 Lavado', amount: 1885, category: 'Insumos' },
   { week: 8, date: '2025-10-24', description: 'Nómina - Flete', amount: 570, category: 'Nómina' },
-  // SEMANA 9
   { week: 9, date: '2025-10-31', description: '10 Bultos Purina', amount: 774, category: 'Insumos' },
   { week: 9, date: '2025-10-31', description: '50 Bultos Purina', amount: 3850, category: 'Insumos' },
   { week: 9, date: '2025-10-31', description: 'Nómina - Ayudantes', amount: 1200, category: 'Nómina' },
-  // SEMANA 10
   { week: 10, date: '2025-11-08', description: 'Radio', amount: 180, category: 'Infraestructura' },
   { week: 10, date: '2025-11-08', description: 'Tilosina', amount: 48, category: 'Sanidad' },
   { week: 10, date: '2025-11-08', description: 'Material (Lana)', amount: 60, category: 'Infraestructura' },
   { week: 10, date: '2025-11-08', description: 'Nómina', amount: 500, category: 'Nómina' },
   { week: 10, date: '2025-11-08', description: 'Vitamina K', amount: 80, category: 'Sanidad' },
-  // SEMANA 11
   { week: 11, date: '2025-11-14', description: 'Despicada', amount: 200, category: 'Sanidad' },
   { week: 11, date: '2025-11-14', description: 'Nómina', amount: 550, category: 'Nómina' },
-  // SEMANA 12
   { week: 12, date: '2025-11-21', description: 'Cámaras', amount: 350, category: 'Infraestructura' },
   { week: 12, date: '2025-11-21', description: '50 Bultos Purina', amount: 3842, category: 'Insumos' },
   { week: 12, date: '2025-11-21', description: 'Nómina', amount: 500, category: 'Nómina' },
   { week: 12, date: '2025-11-21', description: 'Flete Purina', amount: 150, category: 'Otros' },
-  // SEMANA 13
   { week: 13, date: '2025-11-28', description: 'Ponedoras', amount: 5040, category: 'Aves' },
   { week: 13, date: '2025-11-28', description: 'Flete', amount: 220, category: 'Otros' },
   { week: 13, date: '2025-11-28', description: 'Nómina', amount: 500, category: 'Nómina' },
   { week: 13, date: '2025-11-28', description: 'Rastrillo', amount: 35, category: 'Infraestructura' },
-  // SEMANA 14
   { week: 14, date: '2025-12-05', description: '30 Bultos Purina', amount: 2310, category: 'Insumos' },
   { week: 14, date: '2025-12-05', description: 'Nómina', amount: 500, category: 'Nómina' },
   { week: 14, date: '2025-12-05', description: 'Fletes y Gastos', amount: 600, category: 'Otros' },
-  // SEMANA 15
   { week: 15, date: '2025-12-12', description: 'Nómina y Bonos', amount: 700, category: 'Nómina' },
   { week: 15, date: '2025-12-12', description: 'Fletes y Ayudante', amount: 300, category: 'Otros' },
   { week: 15, date: '2025-12-12', description: '50 Bultos Purina', amount: 3850, category: 'Insumos' },
   { week: 15, date: '2025-12-12', description: 'Retroexcavadora', amount: 4800, category: 'Infraestructura' },
-  // SEMANA 16
   { week: 16, date: '2025-12-19', description: 'Nómina y Ayudante', amount: 750, category: 'Nómina' },
   { week: 16, date: '2025-12-19', description: 'Retroexcavadora', amount: 12174, category: 'Infraestructura' },
-  // SEMANA 17
   { week: 17, date: '2025-12-26', description: '20 Bultos Purina', amount: 1584, category: 'Insumos' },
   { week: 17, date: '2025-12-26', description: 'Nómina y Ayudante', amount: 650, category: 'Nómina' },
   { week: 17, date: '2025-12-26', description: 'Flete', amount: 150, category: 'Otros' },
-  // SEMANA 18
   { week: 18, date: '2026-01-02', description: 'Nómina y Bonos', amount: 600, category: 'Nómina' },
   { week: 18, date: '2026-01-02', description: 'Flete', amount: 120, category: 'Otros' },
   { week: 18, date: '2026-01-02', description: 'Bultos Purina', amount: 2000, category: 'Insumos' },
-  // SEMANA 19
   { week: 19, date: '2026-01-09', description: 'Nómina', amount: 740, category: 'Nómina' },
   { week: 19, date: '2026-01-09', description: 'Malla', amount: 330, category: 'Infraestructura' },
   { week: 19, date: '2026-01-09', description: 'Acerrín', amount: 150, category: 'Insumos' },
@@ -171,10 +157,8 @@ const INITIAL_EXPENSES_DATA = [
   { week: 19, date: '2026-01-09', description: 'Transporte', amount: 90, category: 'Otros' },
   { week: 19, date: '2026-01-09', description: 'Sacas', amount: 90, category: 'Insumos' },
   { week: 19, date: '2026-01-09', description: 'Purina Prepico 100 x 100', amount: 7178, category: 'Insumos' },
-  // SEMANA 20
   { week: 20, date: '2026-01-16', description: 'Nómina', amount: 740, category: 'Nómina' },
   { week: 20, date: '2026-01-16', description: 'Compra Pollitas Isa Brown', amount: 11050, category: 'Aves' },
-  // SEMANA 21
   { week: 21, date: '2026-01-23', description: 'Flete Purina Pato', amount: 356, category: 'Otros' },
   { week: 21, date: '2026-01-23', description: 'Nómina', amount: 500, category: 'Nómina' },
   { week: 21, date: '2026-01-23', description: 'Insumos Varios', amount: 1050, category: 'Insumos' },
@@ -183,7 +167,6 @@ const INITIAL_EXPENSES_DATA = [
   { week: 21, date: '2026-01-23', description: 'Bloque', amount: 1625, category: 'Infraestructura' },
   { week: 21, date: '2026-01-23', description: 'Purina Prepico 100 x 40', amount: 2582, category: 'Insumos' },
   { week: 21, date: '2026-01-23', description: 'Flejes Cemento Cabilla', amount: 4667, category: 'Infraestructura' },
-  // SEMANA 22
   { week: 22, date: '2026-01-30', description: 'Purina Preinicio x 2', amount: 202, category: 'Insumos' },
   { week: 22, date: '2026-01-30', description: 'Nómina Merly', amount: 400, category: 'Nómina' },
   { week: 22, date: '2026-01-30', description: 'Nómina Mayra', amount: 500, category: 'Nómina' },
@@ -194,7 +177,6 @@ const INITIAL_EXPENSES_DATA = [
   { week: 22, date: '2026-01-30', description: 'Alambre Flejes Cabilla', amount: 1450, category: 'Infraestructura' },
   { week: 22, date: '2026-01-30', description: 'Vacunas Isa Brow', amount: 5000, category: 'Sanidad' },
   { week: 22, date: '2026-01-30', description: 'Nómina Junior', amount: 7000, category: 'Nómina' },
-  // SEMANA 23
   { week: 23, date: '2026-02-06', description: 'Nómina Merly', amount: 400, category: 'Nómina' },
   { week: 23, date: '2026-02-06', description: 'Flete Rómulo', amount: 420, category: 'Otros' },
   { week: 23, date: '2026-02-06', description: 'Cemento', amount: 825, category: 'Infraestructura' },
@@ -228,11 +210,19 @@ export default function HuevosQueensExpenses() {
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   
   // Estado para controlar qué semanas están expandidas
   const [expandedWeeks, setExpandedWeeks] = useState<number[]>([]);
+  
+  // ESTADOS PARA EL LOGIN Y SEGURIDAD
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // ESTADO PARA EDITAR
+  const [editingExpense, setEditingExpense] = useState<any>(null);
 
   const toggleWeek = (week: number) => {
     if (expandedWeeks.includes(week)) {
@@ -254,50 +244,32 @@ export default function HuevosQueensExpenses() {
     document.title = "Gastos Huevos Queens 👑";
   }, []);
 
-  // Auth y Conexión
+  // --- Auth y Conexión Segura ---
   useEffect(() => {
     if (!auth) {
         setLoading(false);
-        setAuthError("No se pudo iniciar Firebase. Revisa la consola.");
         return;
     }
-    
-    const login = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (err: any) {
-        console.error("Login error:", err);
-        if (err.code === 'auth/admin-restricted-operation' || err.message.includes('domain')) {
-          setAuthError(`⚠️ DOMINIO NO AUTORIZADO ⚠️\n\nVe a Firebase -> Authentication -> Settings -> Authorized Domains\nAgrega: ${window.location.hostname}`);
-        } else {
-          setAuthError("Error de conexión: " + err.message);
-        }
-        setLoading(false);
-      }
-    };
-
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
       if (currentUser) {
-        setUser(currentUser);
-        setAuthError(null);
         setStatus('connected');
       } else {
-        setStatus('connecting');
-        login();
+        setStatus('offline');
       }
+      setLoading(false);
     });
     return () => unsubscribeAuth();
   }, []);
 
-  // Carga de Datos (Ruta Compartida PÚBLICA)
+  // --- Carga de Datos (Solo si está logueado) ---
   useEffect(() => {
-    if (!db) return;
+    if (!db || !user) return;
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'expenses'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setExpenses(data);
-      setLoading(false);
       setStatus('connected');
     }, (error) => {
       console.error("Error:", error);
@@ -305,7 +277,23 @@ export default function HuevosQueensExpenses() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
+
+  // --- LÓGICA DE ACCESO (LOGIN / LOGOUT) ---
+  const handleLogin = (e: any) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+    signInWithEmailAndPassword(auth, email, password)
+      .catch((error) => {
+        setLoginError("Correo o contraseña incorrectos");
+        setIsLoggingIn(false);
+      });
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
 
   const resetAndUploadData = async () => {
     if (!db) return;
@@ -336,6 +324,8 @@ export default function HuevosQueensExpenses() {
     }
     setIsUploading(false);
   };
+
+  const uploadInitialData = resetAndUploadData;
 
   const totalExpenses = useMemo(() => expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0), [expenses]);
   
@@ -401,39 +391,102 @@ export default function HuevosQueensExpenses() {
 
   const deleteExpense = async (id: string) => {
     if (!db) return;
-    if (confirm('¿Borrar gasto?')) {
+    if (confirm('¿Borrar gasto permanentemente?')) {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'expenses', id));
     }
   };
 
+  // --- LÓGICA DE EDICIÓN ---
+  const openEdit = (exp: any) => {
+    setEditingExpense({
+      ...exp,
+      editDate: exp.date || '',
+      editWeek: exp.week || '',
+      editAmount: exp.amount || '',
+      editDesc: exp.description || '',
+      editCategory: exp.category || 'Insumos'
+    });
+  };
+
+  const handleUpdateExpense = async (e: any) => {
+    e.preventDefault();
+    if (!db) return;
+    setIsSaving(true);
+    try {
+      const updatedData = {
+        date: editingExpense.editDate,
+        week: Number(editingExpense.editWeek),
+        amount: Number(editingExpense.editAmount),
+        description: editingExpense.editDesc,
+        category: editingExpense.editCategory
+      };
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'expenses', editingExpense.id), updatedData);
+      setEditingExpense(null);
+    } catch (error) {
+      console.error(error);
+      alert("Error al actualizar el gasto.");
+    }
+    setIsSaving(false);
+  };
+
   const displayAmount = (val: number) => new Intl.NumberFormat('es-CO').format(val);
 
-  if (loading || authError) {
+  // --- PANTALLAS ---
+
+  // 1. Cargando
+  if (loading) {
       return (
         <div className="flex flex-col h-screen items-center justify-center bg-gray-50 p-6 text-center">
-             {authError ? (
-                 <div className="bg-white p-6 rounded-2xl shadow-xl max-w-md border-l-4 border-red-500">
-                     <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                     <h3 className="font-bold text-gray-800 text-lg mb-2">Acceso Restringido</h3>
-                     <p className="text-gray-600 text-sm whitespace-pre-line text-left">{authError}</p>
-                 </div>
-             ) : (
-                <div className="animate-pulse text-emerald-600 font-medium flex flex-col items-center">
-                    <Loader2 className="w-8 h-8 animate-spin mb-2" />
-                    Conectando con la Nube...
-                </div>
-             )}
+            <div className="animate-pulse text-emerald-600 font-medium flex flex-col items-center">
+                <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                Conectando...
+            </div>
         </div>
       );
   } 
 
+  // 2. Pantalla de Login (Si no hay usuario)
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-900 via-emerald-800 to-green-500 flex items-center justify-center p-4 font-sans">
+        <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden">
+          <div className="bg-emerald-600 p-8 text-center relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-20"><Lock className="w-24 h-24 text-white" /></div>
+            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto shadow-lg mb-4 relative z-10">
+              <Leaf className="w-10 h-10 text-emerald-600"/>
+            </div>
+            <h1 className="text-2xl font-black text-white relative z-10 uppercase tracking-wide">Huevos Queens</h1>
+            <p className="text-emerald-200 text-sm mt-1 relative z-10">Acceso Privado - Gastos</p>
+          </div>
+          <div className="p-8">
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2">Correo Electrónico</label>
+                <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required className="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-700 font-medium" placeholder="usuario@correo.com" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2">Contraseña</label>
+                <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} required className="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-700 font-medium" placeholder="••••••••" />
+              </div>
+              {loginError && <p className="text-red-500 text-xs font-bold text-center bg-red-50 p-2 rounded-lg border border-red-100">{loginError}</p>}
+              <button type="submit" disabled={isLoggingIn} className="w-full bg-yellow-400 hover:bg-yellow-500 text-emerald-900 font-black py-4 rounded-xl shadow-md transition-all mt-4">
+                {isLoggingIn ? 'Verificando...' : 'ENTRAR'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. App Principal (Si ya inició sesión)
   return (
     <div className="min-h-screen bg-gray-50 pb-20 font-sans">
       {/* Header Verde */}
       <div className="bg-emerald-600 text-white pt-8 pb-12 px-6 rounded-b-[2.5rem] shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10"><Leaf size={140} /></div>
         
-        {/* Barra de Estado y Botón Restaurar */}
+        {/* Barra de Estado y Botones Header */}
         <div className="absolute top-4 right-6 flex items-center gap-2 z-20">
             <button 
                 onClick={resetAndUploadData}
@@ -443,21 +496,16 @@ export default function HuevosQueensExpenses() {
             >
                 {isUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCw className="w-4 h-4"/>}
             </button>
-
-            {status === 'connected' ? (
-                <span className="bg-emerald-800/40 backdrop-blur-sm text-emerald-50 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border border-emerald-400/30">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]"></div>
-                    En Línea
-                </span>
-            ) : (
-                <span className="bg-red-800/40 backdrop-blur-sm text-red-50 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border border-red-400/30">
-                    <Wifi className="w-3 h-3" />
-                    Offline
-                </span>
-            )}
+            <button 
+                onClick={handleLogout}
+                className="bg-red-500/80 backdrop-blur-sm text-white p-2 rounded-full border border-red-400/30 hover:bg-red-600 transition-colors shadow-sm"
+                title="Cerrar Sesión"
+            >
+                <LogOut className="w-4 h-4"/>
+            </button>
         </div>
 
-        <div className="relative z-10">
+        <div className="relative z-10 mt-2">
           <h1 className="text-2xl font-bold mb-1">Huevos Queens 👑</h1>
           <p className="text-emerald-100 mb-6 font-medium">Control de Costos (V2)</p>
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/20">
@@ -572,17 +620,20 @@ export default function HuevosQueensExpenses() {
                    {isExpanded && (
                      <div className="bg-gray-50/30 border-t border-emerald-100 p-3 space-y-3 animate-in slide-in-from-top-2 duration-200">
                        {expensesByWeek[weekNum].map((expense: any) => (
-                         <div key={expense.id} className="bg-white p-3.5 rounded-xl border border-gray-100 flex justify-between items-center ml-2 shadow-sm relative group">
-                            <div className="flex items-center gap-3">
+                         <div key={expense.id} className="bg-white p-3.5 rounded-xl border border-gray-100 flex justify-between items-center ml-2 shadow-sm relative group hover:bg-emerald-50/30 transition-colors">
+                            <div className="flex items-center gap-3 w-2/3">
                               <CategoryIcon category={expense.category} />
                               <div>
-                                <h4 className="font-bold text-gray-700 text-sm leading-tight">{expense.description}</h4>
+                                <h4 className="font-bold text-gray-700 text-sm leading-tight pr-2">{expense.description}</h4>
                                 <span className="text-[10px] text-gray-400 font-medium">{expense.date}</span>
                               </div>
                             </div>
-                            <div className="text-right">
+                            <div className="text-right flex items-center gap-2">
                               <div className="font-bold text-gray-700 text-sm">${displayAmount(expense.amount)}</div>
-                              <button onClick={() => deleteExpense(expense.id)} className="text-red-300 hover:text-red-500 p-1.5 -mr-1 transition-colors"><Trash2 size={14} /></button>
+                              <div className="flex flex-col gap-1 border-l pl-2 border-gray-100">
+                                <button onClick={() => openEdit(expense)} className="text-gray-300 hover:text-emerald-600 p-1 rounded hover:bg-emerald-50"><Pencil size={14} /></button>
+                                <button onClick={() => deleteExpense(expense.id)} className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50"><Trash2 size={14} /></button>
+                              </div>
                             </div>
                          </div>
                        ))}
@@ -634,6 +685,50 @@ export default function HuevosQueensExpenses() {
           </Card>
         )}
       </div>
+
+      {/* --- MODAL PARA EDITAR GASTO --- */}
+      {editingExpense && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 border-t-8 border-emerald-500">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-black text-emerald-900 uppercase">Editar Gasto</h3>
+                    <button onClick={() => setEditingExpense(null)} className="p-1 hover:bg-gray-100 rounded-full"><X className="text-gray-500 w-5 h-5" /></button>
+                </div>
+                <form onSubmit={handleUpdateExpense} className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Fecha</label>
+                        <input type="date" value={editingExpense.editDate} onChange={e => setEditingExpense({...editingExpense, editDate: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-700" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Semana</label>
+                            <input type="number" value={editingExpense.editWeek} onChange={e => setEditingExpense({...editingExpense, editWeek: e.target.value})} className="w-full p-3 border rounded-xl text-center" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Monto ($)</label>
+                            <input type="number" value={editingExpense.editAmount} onChange={e => setEditingExpense({...editingExpense, editAmount: e.target.value})} className="w-full p-3 border rounded-xl" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Concepto / Descripción</label>
+                        <input type="text" value={editingExpense.editDesc} onChange={e => setEditingExpense({...editingExpense, editDesc: e.target.value})} className="w-full p-3 border rounded-xl" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase ml-1 mb-2 block">Categoría</label>
+                        <select value={editingExpense.editCategory} onChange={e => setEditingExpense({...editingExpense, editCategory: e.target.value})} className="w-full p-3 border rounded-xl bg-white outline-none">
+                            {['Insumos', 'Nómina', 'Infraestructura', 'Sanidad', 'Aves', 'Otros'].map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <button type="submit" disabled={isSaving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow mt-2">
+                        {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+                    </button>
+                </form>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }
