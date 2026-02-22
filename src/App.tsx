@@ -186,7 +186,10 @@ const INITIAL_EXPENSES_DATA = [
 
 const COLORS = ['#10B981', '#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6', '#6366F1'];
 
-const CategoryIcon = ({ category }: { category: string }) => {
+const CategoryIcon = ({ category, isIncome }: { category: string, isIncome?: boolean }) => {
+  if (isIncome) {
+      return <div className="p-2 bg-blue-100 rounded-lg"><TrendingUp className="w-5 h-5 text-blue-600" /></div>;
+  }
   switch (category) {
     case 'Insumos': return <div className="p-2 bg-yellow-100 rounded-lg"><Leaf className="w-5 h-5 text-yellow-600" /></div>;
     case 'Nómina': return <div className="p-2 bg-green-100 rounded-lg"><DollarSign className="w-5 h-5 text-green-600" /></div>;
@@ -212,7 +215,6 @@ export default function HuevosQueensExpenses() {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   
-  // Estado para controlar qué semanas están expandidas
   const [expandedWeeks, setExpandedWeeks] = useState<number[]>([]);
   
   // ESTADOS PARA EL LOGIN Y SEGURIDAD
@@ -240,8 +242,16 @@ export default function HuevosQueensExpenses() {
     category: 'Insumos'
   });
 
+  const [newIncome, setNewIncome] = useState({
+    date: new Date().toISOString().split('T')[0],
+    week: '',
+    description: '',
+    amount: '',
+    category: 'Efectivo'
+  });
+
   useEffect(() => {
-    document.title = "Gastos Huevos Queens 👑";
+    document.title = "Huevos Queens 👑";
   }, []);
 
   // --- Auth y Conexión Segura ---
@@ -262,7 +272,7 @@ export default function HuevosQueensExpenses() {
     return () => unsubscribeAuth();
   }, []);
 
-  // --- Carga de Datos (Solo si está logueado) ---
+  // --- Carga de Datos ---
   useEffect(() => {
     if (!db || !user) return;
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'expenses'));
@@ -279,7 +289,6 @@ export default function HuevosQueensExpenses() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- LÓGICA DE ACCESO (LOGIN / LOGOUT) ---
   const handleLogin = (e: any) => {
     e.preventDefault();
     setIsLoggingIn(true);
@@ -317,7 +326,7 @@ export default function HuevosQueensExpenses() {
       });
       await batchAdd.commit();
       
-      alert('¡Sincronización Completa! 🎉\n\nSe han cargado todas las semanas (1-23).');
+      alert('¡Sincronización Completa! 🎉');
     } catch (error: any) {
       console.error(error);
       alert('Error en la sincronización: ' + error.message);
@@ -327,20 +336,25 @@ export default function HuevosQueensExpenses() {
 
   const uploadInitialData = resetAndUploadData;
 
-  const totalExpenses = useMemo(() => expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0), [expenses]);
+  // --- CÁLCULOS DE GASTOS E INGRESOS ---
+  const expensesOnly = useMemo(() => expenses.filter(e => e.type !== 'income'), [expenses]);
+  const incomesOnly = useMemo(() => expenses.filter(e => e.type === 'income'), [expenses]);
+
+  const totalExpenses = useMemo(() => expensesOnly.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0), [expensesOnly]);
+  const totalIncome = useMemo(() => incomesOnly.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0), [incomesOnly]);
   
   const byCategory = useMemo(() => {
     const data: any = {};
-    expenses.forEach(item => {
+    expensesOnly.forEach(item => {
       if (!data[item.category]) data[item.category] = 0;
       data[item.category] += Number(item.amount);
     });
     return Object.keys(data).map(key => ({ name: key, value: data[key] }));
-  }, [expenses]);
+  }, [expensesOnly]);
 
   const byWeek = useMemo(() => {
     const data: any = {};
-    expenses.forEach(item => {
+    expensesOnly.forEach(item => {
       const key = `Sem ${item.week}`;
       if (!data[key]) data[key] = 0;
       data[key] += Number(item.amount);
@@ -348,7 +362,7 @@ export default function HuevosQueensExpenses() {
     return Object.keys(data)
       .sort((a, b) => parseInt(a.split(' ')[1]) - parseInt(b.split(' ')[1]))
       .map(key => ({ name: key, total: data[key] }));
-  }, [expenses]);
+  }, [expensesOnly]);
 
   const expensesByWeek = useMemo(() => {
     const grouped: any = {};
@@ -364,6 +378,7 @@ export default function HuevosQueensExpenses() {
     return Object.keys(expensesByWeek).sort((a, b) => Number(b) - Number(a));
   }, [expensesByWeek]);
 
+  // --- GUARDAR GASTO ---
   const handleAddExpense = async (e: any) => {
     e.preventDefault();
     if (!db) return;
@@ -384,14 +399,41 @@ export default function HuevosQueensExpenses() {
       }
     } catch (error) {
       console.error(error);
-      alert("Error al guardar. Verifica tu conexión.");
+      alert("Error al guardar.");
+    }
+    setIsSaving(false);
+  };
+
+  // --- GUARDAR INGRESO ---
+  const handleAddIncome = async (e: any) => {
+    e.preventDefault();
+    if (!db) return;
+    setIsSaving(true);
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'expenses'), {
+        ...newIncome,
+        type: 'income',
+        amount: Number(newIncome.amount),
+        week: Number(newIncome.week || 19),
+        createdAt: new Date(),
+        device: navigator.userAgent 
+      });
+      setNewIncome({ ...newIncome, description: '', amount: '' });
+      setView('list');
+      if (newIncome.week) {
+          const w = Number(newIncome.week);
+          if (!expandedWeeks.includes(w)) setExpandedWeeks(prev => [...prev, w]);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar el ingreso.");
     }
     setIsSaving(false);
   };
 
   const deleteExpense = async (id: string) => {
     if (!db) return;
-    if (confirm('¿Borrar gasto permanentemente?')) {
+    if (confirm('¿Borrar este registro permanentemente?')) {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'expenses', id));
     }
   };
@@ -404,7 +446,7 @@ export default function HuevosQueensExpenses() {
       editWeek: exp.week || '',
       editAmount: exp.amount || '',
       editDesc: exp.description || '',
-      editCategory: exp.category || 'Insumos'
+      editCategory: exp.category || (exp.type === 'income' ? 'Efectivo' : 'Insumos')
     });
   };
 
@@ -424,7 +466,7 @@ export default function HuevosQueensExpenses() {
       setEditingExpense(null);
     } catch (error) {
       console.error(error);
-      alert("Error al actualizar el gasto.");
+      alert("Error al actualizar.");
     }
     setIsSaving(false);
   };
@@ -433,7 +475,6 @@ export default function HuevosQueensExpenses() {
 
   // --- PANTALLAS ---
 
-  // 1. Cargando
   if (loading) {
       return (
         <div className="flex flex-col h-screen items-center justify-center bg-gray-50 p-6 text-center">
@@ -445,7 +486,6 @@ export default function HuevosQueensExpenses() {
       );
   } 
 
-  // 2. Pantalla de Login (Si no hay usuario)
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-900 via-emerald-800 to-green-500 flex items-center justify-center p-4 font-sans">
@@ -456,7 +496,7 @@ export default function HuevosQueensExpenses() {
               <Leaf className="w-10 h-10 text-emerald-600"/>
             </div>
             <h1 className="text-2xl font-black text-white relative z-10 uppercase tracking-wide">Huevos Queens</h1>
-            <p className="text-emerald-200 text-sm mt-1 relative z-10">Acceso Privado - Gastos</p>
+            <p className="text-emerald-200 text-sm mt-1 relative z-10">Acceso Privado</p>
           </div>
           <div className="p-8">
             <form onSubmit={handleLogin} className="space-y-5">
@@ -479,14 +519,13 @@ export default function HuevosQueensExpenses() {
     );
   }
 
-  // 3. App Principal (Si ya inició sesión)
   return (
     <div className="min-h-screen bg-gray-50 pb-20 font-sans">
       {/* Header Verde */}
       <div className="bg-emerald-600 text-white pt-8 pb-12 px-6 rounded-b-[2.5rem] shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10"><Leaf size={140} /></div>
         
-        {/* Barra de Estado y Botones Header */}
+        {/* Barra de Estado */}
         <div className="absolute top-4 right-6 flex items-center gap-2 z-20">
             <button 
                 onClick={resetAndUploadData}
@@ -507,31 +546,41 @@ export default function HuevosQueensExpenses() {
 
         <div className="relative z-10 mt-2">
           <h1 className="text-2xl font-bold mb-1">Huevos Queens 👑</h1>
-          <p className="text-emerald-100 mb-6 font-medium">Control de Costos (V2)</p>
+          <p className="text-emerald-100 mb-6 font-medium">Control y Balance (V2)</p>
+          
+          {/* TABLERO DE BALANCE */}
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/20">
-            <span className="text-emerald-50 text-xs font-bold uppercase tracking-wider">Total Gastado</span>
-            <div className="text-4xl font-extrabold mt-2">${displayAmount(totalExpenses)}</div>
+            <div className="flex justify-between items-end border-b border-white/20 pb-4 mb-4">
+               <div>
+                   <span className="text-emerald-50 text-[10px] font-bold uppercase tracking-wider">Total Gastado</span>
+                   <div className="text-2xl font-extrabold mt-1 text-red-200">-${displayAmount(totalExpenses)}</div>
+               </div>
+               <div className="text-right">
+                   <span className="text-emerald-50 text-[10px] font-bold uppercase tracking-wider">Total Ganado</span>
+                   <div className="text-2xl font-extrabold mt-1 text-blue-200">+${displayAmount(totalIncome)}</div>
+               </div>
+            </div>
+            <div className="text-center">
+               <span className="text-emerald-50 text-xs font-bold uppercase tracking-wider">Balance Actual</span>
+               <div className={`text-4xl font-black mt-1 ${totalIncome - totalExpenses >= 0 ? 'text-white' : 'text-yellow-300'}`}>
+                 ${displayAmount(totalIncome - totalExpenses)}
+               </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Menú Flotante */}
       <div className="relative z-20 -mt-8 mb-8 px-4">
-        <div className="bg-white p-2 rounded-2xl shadow-lg border border-gray-100 flex justify-between max-w-sm mx-auto">
-          {['dashboard', 'list', 'add'].map((v) => (
-            <button 
-              key={v}
-              onClick={() => setView(v)}
-              className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${view === v ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
-            >
-              {v === 'dashboard' ? 'Resumen' : v === 'list' ? 'Historial' : '+ Nuevo'}
-            </button>
-          ))}
+        <div className="bg-white p-2 rounded-2xl shadow-lg border border-gray-100 flex justify-between max-w-lg mx-auto overflow-x-auto gap-2">
+          <button onClick={() => setView('dashboard')} className={`flex-1 min-w-[70px] py-3 rounded-xl text-xs font-bold transition-all ${view === 'dashboard' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}>Resumen</button>
+          <button onClick={() => setView('list')} className={`flex-1 min-w-[70px] py-3 rounded-xl text-xs font-bold transition-all ${view === 'list' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}>Historial</button>
+          <button onClick={() => setView('add')} className={`flex-1 min-w-[70px] py-3 rounded-xl text-xs font-bold transition-all ${view === 'add' ? 'bg-red-500 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}>- Gasto</button>
+          <button onClick={() => setView('addIncome')} className={`flex-1 min-w-[70px] py-3 rounded-xl text-xs font-bold transition-all ${view === 'addIncome' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}>+ Ingreso</button>
         </div>
       </div>
 
       <div className="px-4 space-y-6 max-w-lg mx-auto">
-        {/* Botón Carga Inicial (Solo si está vacío) */}
         {expenses.length === 0 && !loading && (
           <Card className="bg-emerald-50 border-emerald-200">
             <CardHeader className="bg-transparent border-none pb-0">
@@ -552,7 +601,7 @@ export default function HuevosQueensExpenses() {
         {view === 'dashboard' && expenses.length > 0 && (
           <>
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><PieChart className="text-emerald-500"/> Por Categoría</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2"><PieChart className="text-emerald-500"/> Gastos Por Categoría</CardTitle></CardHeader>
               <CardContent>
                 <div className="h-64 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -596,7 +645,10 @@ export default function HuevosQueensExpenses() {
              )}
              
              {sortedWeeks.map((weekNum: any) => {
-               const weekTotal = expensesByWeek[weekNum].reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+               // Filtrar gastos e ingresos de esta semana
+               const weekExpenses = expensesByWeek[weekNum].filter((e:any) => e.type !== 'income').reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+               const weekIncome = expensesByWeek[weekNum].filter((e:any) => e.type === 'income').reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+               
                const isExpanded = expandedWeeks.includes(Number(weekNum));
                
                return (
@@ -611,7 +663,10 @@ export default function HuevosQueensExpenses() {
                        </div>
                        <div className="text-left">
                          <p className="text-xs text-gray-500 font-bold uppercase tracking-wide">Semana {weekNum}</p>
-                         <p className="text-emerald-800 font-extrabold text-lg">${displayAmount(weekTotal)}</p>
+                         <div className="flex gap-3 text-sm mt-0.5">
+                            {weekExpenses > 0 && <span className="text-red-500 font-bold">-{displayAmount(weekExpenses)}</span>}
+                            {weekIncome > 0 && <span className="text-blue-600 font-bold">+{displayAmount(weekIncome)}</span>}
+                         </div>
                        </div>
                      </div>
                      {isExpanded ? <ChevronUp className="text-emerald-500"/> : <ChevronDown className="text-gray-300"/>}
@@ -619,24 +674,29 @@ export default function HuevosQueensExpenses() {
                    
                    {isExpanded && (
                      <div className="bg-gray-50/30 border-t border-emerald-100 p-3 space-y-3 animate-in slide-in-from-top-2 duration-200">
-                       {expensesByWeek[weekNum].map((expense: any) => (
-                         <div key={expense.id} className="bg-white p-3.5 rounded-xl border border-gray-100 flex justify-between items-center ml-2 shadow-sm relative group hover:bg-emerald-50/30 transition-colors">
-                            <div className="flex items-center gap-3 w-2/3">
-                              <CategoryIcon category={expense.category} />
-                              <div>
-                                <h4 className="font-bold text-gray-700 text-sm leading-tight pr-2">{expense.description}</h4>
-                                <span className="text-[10px] text-gray-400 font-medium">{expense.date}</span>
+                       {expensesByWeek[weekNum].map((expense: any) => {
+                         const isIncome = expense.type === 'income';
+                         return (
+                           <div key={expense.id} className={`bg-white p-3.5 rounded-xl border flex justify-between items-center shadow-sm relative group transition-colors ${isIncome ? 'border-blue-100 hover:bg-blue-50/30' : 'border-red-50 hover:bg-red-50/30'}`}>
+                              <div className="flex items-center gap-3 w-2/3">
+                                <CategoryIcon category={expense.category} isIncome={isIncome} />
+                                <div>
+                                  <h4 className="font-bold text-gray-700 text-sm leading-tight pr-2">{expense.description}</h4>
+                                  <span className="text-[10px] text-gray-400 font-medium">{expense.date} • {expense.category}</span>
+                                </div>
                               </div>
-                            </div>
-                            <div className="text-right flex items-center gap-2">
-                              <div className="font-bold text-gray-700 text-sm">${displayAmount(expense.amount)}</div>
-                              <div className="flex flex-col gap-1 border-l pl-2 border-gray-100">
-                                <button onClick={() => openEdit(expense)} className="text-gray-300 hover:text-emerald-600 p-1 rounded hover:bg-emerald-50"><Pencil size={14} /></button>
-                                <button onClick={() => deleteExpense(expense.id)} className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50"><Trash2 size={14} /></button>
+                              <div className="text-right flex items-center gap-2">
+                                <div className={`font-bold text-sm ${isIncome ? 'text-blue-600' : 'text-red-500'}`}>
+                                  {isIncome ? '+' : '-'}${displayAmount(expense.amount)}
+                                </div>
+                                <div className="flex flex-col gap-1 border-l pl-2 border-gray-100">
+                                  <button onClick={() => openEdit(expense)} className={`p-1 rounded transition-colors ${isIncome ? 'text-blue-300 hover:text-blue-600 hover:bg-blue-50' : 'text-gray-300 hover:text-emerald-600 hover:bg-emerald-50'}`}><Pencil size={14} /></button>
+                                  <button onClick={() => deleteExpense(expense.id)} className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50"><Trash2 size={14} /></button>
+                                </div>
                               </div>
-                            </div>
-                         </div>
-                       ))}
+                           </div>
+                         );
+                       })}
                      </div>
                    )}
                  </div>
@@ -645,38 +705,39 @@ export default function HuevosQueensExpenses() {
            </div>
         )}
 
+        {/* --- FORMULARIO GASTOS --- */}
         {view === 'add' && (
           <Card>
-            <CardHeader className="bg-emerald-600 text-white rounded-t-xl"><CardTitle className="text-white text-center">Nuevo Gasto</CardTitle></CardHeader>
+            <CardHeader className="bg-red-500 text-white rounded-t-xl"><CardTitle className="text-white text-center">Registrar Gasto</CardTitle></CardHeader>
             <CardContent>
               <form onSubmit={handleAddExpense} className="space-y-4 pt-4">
                 <div>
                   <label className="text-xs font-bold text-gray-500 uppercase ml-1">Fecha</label>
-                  <input type="date" required value={newExpense.date} onChange={e => setNewExpense({...newExpense, date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"/>
+                  <input type="date" required value={newExpense.date} onChange={e => setNewExpense({...newExpense, date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-red-500"/>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-gray-500 uppercase ml-1">Semana</label>
-                    <input type="number" placeholder="Ej: 19" value={newExpense.week} onChange={e => setNewExpense({...newExpense, week: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"/>
+                    <input type="number" placeholder="Ej: 19" value={newExpense.week} onChange={e => setNewExpense({...newExpense, week: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-red-500"/>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase ml-1">Monto</label>
-                    <input type="number" required placeholder="$0" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"/>
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1">Monto Gastado</label>
+                    <input type="number" required placeholder="$0" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-red-500"/>
                   </div>
                 </div>
                 <div>
                     <label className="text-xs font-bold text-gray-500 uppercase ml-1">Concepto</label>
-                    <input type="text" required placeholder="Ej: Purina Inicio" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"/>
+                    <input type="text" required placeholder="Ej: Purina Inicio" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-red-500"/>
                 </div>
                 <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase ml-1 mb-2 block">Categoría</label>
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1 mb-2 block">Categoría del Gasto</label>
                     <div className="grid grid-cols-3 gap-2">
                         {['Insumos', 'Nómina', 'Infraestructura', 'Sanidad', 'Aves', 'Otros'].map(cat => (
-                            <button key={cat} type="button" onClick={() => setNewExpense({...newExpense, category: cat})} className={`text-xs py-2 rounded-lg border transition-all ${newExpense.category === cat ? 'bg-emerald-100 border-emerald-500 text-emerald-800 font-bold scale-105' : 'bg-white text-gray-500'}`}>{cat}</button>
+                            <button key={cat} type="button" onClick={() => setNewExpense({...newExpense, category: cat})} className={`text-xs py-2 rounded-lg border transition-all ${newExpense.category === cat ? 'bg-red-100 border-red-500 text-red-800 font-bold scale-105' : 'bg-white text-gray-500'}`}>{cat}</button>
                         ))}
                     </div>
                 </div>
-                <button type="submit" disabled={isSaving} className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-lg mt-2 flex justify-center items-center gap-2 hover:bg-emerald-700 transition-colors">
+                <button type="submit" disabled={isSaving} className="w-full bg-red-500 text-white py-3 rounded-xl font-bold shadow-lg mt-2 flex justify-center items-center gap-2 hover:bg-red-600 transition-colors">
                     {isSaving ? <Loader2 className="animate-spin"/> : <Save size={18}/>}
                     {isSaving ? 'Guardando...' : 'Guardar Gasto'}
                 </button>
@@ -684,14 +745,57 @@ export default function HuevosQueensExpenses() {
             </CardContent>
           </Card>
         )}
+
+        {/* --- FORMULARIO INGRESOS (NUEVO) --- */}
+        {view === 'addIncome' && (
+          <Card>
+            <CardHeader className="bg-blue-600 text-white rounded-t-xl"><CardTitle className="text-white text-center">Registrar Ganancia (Ingreso)</CardTitle></CardHeader>
+            <CardContent>
+              <form onSubmit={handleAddIncome} className="space-y-4 pt-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase ml-1">Fecha</label>
+                  <input type="date" required value={newIncome.date} onChange={e => setNewIncome({...newIncome, date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"/>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1">Semana</label>
+                    <input type="number" placeholder="Ej: 19" value={newIncome.week} onChange={e => setNewIncome({...newIncome, week: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1">Monto Ganado</label>
+                    <input type="number" required placeholder="$0" value={newIncome.amount} onChange={e => setNewIncome({...newIncome, amount: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"/>
+                  </div>
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1">Concepto</label>
+                    <input type="text" required placeholder="Ej: Venta de huevos" value={newIncome.description} onChange={e => setNewIncome({...newIncome, description: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"/>
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1 mb-2 block">Medio de Pago</label>
+                    <div className="grid grid-cols-3 gap-2">
+                        {['Efectivo', 'Nequi', 'Bancolombia', 'Daviplata', 'Otro'].map(cat => (
+                            <button key={cat} type="button" onClick={() => setNewIncome({...newIncome, category: cat})} className={`text-xs py-2 rounded-lg border transition-all ${newIncome.category === cat ? 'bg-blue-100 border-blue-500 text-blue-800 font-bold scale-105' : 'bg-white text-gray-500'}`}>{cat}</button>
+                        ))}
+                    </div>
+                </div>
+                <button type="submit" disabled={isSaving} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg mt-2 flex justify-center items-center gap-2 hover:bg-blue-700 transition-colors">
+                    {isSaving ? <Loader2 className="animate-spin"/> : <Save size={18}/>}
+                    {isSaving ? 'Guardando...' : 'Guardar Ingreso'}
+                </button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      {/* --- MODAL PARA EDITAR GASTO --- */}
+      {/* --- MODAL PARA EDITAR GASTO/INGRESO --- */}
       {editingExpense && (
         <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 border-t-8 border-emerald-500">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-black text-emerald-900 uppercase">Editar Gasto</h3>
+                    <h3 className="font-black text-emerald-900 uppercase">
+                        {editingExpense.type === 'income' ? 'Editar Ingreso' : 'Editar Gasto'}
+                    </h3>
                     <button onClick={() => setEditingExpense(null)} className="p-1 hover:bg-gray-100 rounded-full"><X className="text-gray-500 w-5 h-5" /></button>
                 </div>
                 <form onSubmit={handleUpdateExpense} className="space-y-4">
@@ -716,9 +820,10 @@ export default function HuevosQueensExpenses() {
                     <div>
                         <label className="text-[10px] font-bold text-gray-500 uppercase ml-1 mb-2 block">Categoría</label>
                         <select value={editingExpense.editCategory} onChange={e => setEditingExpense({...editingExpense, editCategory: e.target.value})} className="w-full p-3 border rounded-xl bg-white outline-none">
-                            {['Insumos', 'Nómina', 'Infraestructura', 'Sanidad', 'Aves', 'Otros'].map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                            ))}
+                            {editingExpense.type === 'income' 
+                                ? ['Efectivo', 'Nequi', 'Bancolombia', 'Daviplata', 'Otro'].map(cat => <option key={cat} value={cat}>{cat}</option>)
+                                : ['Insumos', 'Nómina', 'Infraestructura', 'Sanidad', 'Aves', 'Otros'].map(cat => <option key={cat} value={cat}>{cat}</option>)
+                            }
                         </select>
                     </div>
                     <button type="submit" disabled={isSaving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow mt-2">
